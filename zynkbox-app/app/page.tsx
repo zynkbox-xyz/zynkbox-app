@@ -462,3 +462,23 @@ export default function GmailStyleInbox() {
     </div>
   );
 }
+const [user, setUser] = useState<any>(null);
+const [isAuthOpen, setIsAuthOpen] = useState(false);
+const [savedInboxes, setSavedInboxes] = useState<any[]>([]);
+
+useEffect(() => {
+  supabase.auth.getUser().then(async ({ data: { user } }) => {
+    setUser(user);
+    if (user) {
+      const { data: inboxes } = await supabase
+        .from('user_inboxes')
+        .select('*')
+        .eq('user_id', user.id);
+
+      if (inboxes && inboxes.length > 0) {
+        setSavedInboxes(inboxes);
+        setCurrentEmail(inboxes[0].address);
+      }
+    }
+  });
+}, []);
