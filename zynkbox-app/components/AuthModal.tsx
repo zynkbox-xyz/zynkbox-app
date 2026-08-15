@@ -2,13 +2,12 @@
 
 import React, { useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Mail, Lock, X } from 'lucide-react';
+import { Lock, X, AtSign } from 'lucide-react';
 
 export default function AuthModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   const [isSignUp, setIsSignUp] = useState(false);
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [desiredUsername, setDesiredUsername] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -19,20 +18,20 @@ export default function AuthModal({ isOpen, onClose }: { isOpen: boolean; onClos
     setLoading(true);
     setError('');
 
+    const cleanUser = username.toLowerCase().trim().replace(/[^a-z0-9._-]/g, '');
+    const fullAddress = `${cleanUser}@zynkbox.xyz`;
+
     try {
       if (isSignUp) {
-        // 1. Sign up the user
+        // Direct signup without external email confirmation
         const { data: authData, error: authErr } = await supabase.auth.signUp({
-          email,
-          password,
+          email: fullAddress,
+          password: password,
         });
         if (authErr) throw authErr;
 
         if (authData.user) {
-          // 2. Claim their permanent @zynkbox.xyz address
-          const cleanUser = desiredUsername.toLowerCase().trim().replace(/[^a-z0-9._-]/g, '');
-          const fullAddress = `${cleanUser}@zynkbox.xyz`;
-
+          // Register permanent inbox record
           const { error: inboxErr } = await supabase.from('user_inboxes').insert({
             user_id: authData.user.id,
             username: cleanUser,
@@ -43,16 +42,22 @@ export default function AuthModal({ isOpen, onClose }: { isOpen: boolean; onClos
           if (inboxErr) throw inboxErr;
         }
       } else {
+        // Direct login using full mailbox address and password
         const { error: signInErr } = await supabase.auth.signInWithPassword({
-          email,
-          password,
+          email: fullAddress,
+          password: password,
         });
         if (signInErr) throw signInErr;
       }
+
       onClose();
       window.location.reload();
-    } catch (err: any) {
-      setError(err.message || 'Authentication failed');
+    } catch (err: unknown) {
+      if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError('Authentication failed');
+      }
     } finally {
       setLoading(false);
     }
@@ -63,16 +68,18 @@ export default function AuthModal({ isOpen, onClose }: { isOpen: boolean; onClos
       <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl relative">
         <button 
           onClick={onClose} 
-          className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 p-1 rounded-full hover:bg-gray-100"
+          className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 p-1 rounded-full hover:bg-gray-100 cursor-pointer"
         >
           <X size={18} />
         </button>
 
         <h2 className="text-xl font-bold text-gray-900 mb-1">
-          {isSignUp ? 'Claim Your Permanent Mailbox' : 'Welcome Back'}
+          {isSignUp ? 'Create Permanent Mailbox' : 'Mailbox Login'}
         </h2>
         <p className="text-sm text-gray-500 mb-6">
-          {isSignUp ? 'Create an account to keep your custom address forever.' : 'Sign in to access your permanent inbox.'}
+          {isSignUp 
+            ? 'Set a custom address and password for immediate access.' 
+            : 'Enter your mailbox address and password.'}
         </p>
 
         {error && (
@@ -81,49 +88,33 @@ export default function AuthModal({ isOpen, onClose }: { isOpen: boolean; onClos
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-3">
-          {isSignUp && (
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-1">Desired Address</label>
-              <div className="flex items-center border rounded-xl px-3 py-2 bg-gray-50 focus-within:ring-2 focus-within:ring-black">
-                <input
-                  type="text"
-                  placeholder="yourname"
-                  value={desiredUsername}
-                  onChange={(e) => setDesiredUsername(e.target.value)}
-                  className="bg-transparent text-sm w-full outline-none"
-                  required
-                />
-                <span className="text-xs text-gray-500 font-medium whitespace-nowrap">@zynkbox.xyz</span>
-              </div>
-            </div>
-          )}
-
+        <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-xs font-semibold text-gray-700 mb-1">Recovery Email</label>
-            <div className="flex items-center border rounded-xl px-3 py-2 focus-within:ring-2 focus-within:ring-black">
-              <Mail size={16} className="text-gray-400 mr-2" />
+            <label className="block text-xs font-semibold text-gray-700 mb-1">Mailbox Address</label>
+            <div className="flex items-center border rounded-xl px-3 py-2.5 bg-gray-50 focus-within:bg-white focus-within:ring-2 focus-within:ring-black">
+              <AtSign size={16} className="text-gray-400 mr-2" />
               <input
-                type="email"
-                placeholder="you@gmail.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="bg-transparent text-sm w-full outline-none"
+                type="text"
+                placeholder="client_name"
+                value={username}
+                onChange={(e) => setUsername(e.target.value.replace('@zynkbox.xyz', ''))}
+                className="bg-transparent text-sm w-full outline-none font-medium"
                 required
               />
+              <span className="text-xs text-gray-500 font-semibold whitespace-nowrap">@zynkbox.xyz</span>
             </div>
           </div>
 
           <div>
             <label className="block text-xs font-semibold text-gray-700 mb-1">Password</label>
-            <div className="flex items-center border rounded-xl px-3 py-2 focus-within:ring-2 focus-within:ring-black">
+            <div className="flex items-center border rounded-xl px-3 py-2.5 focus-within:ring-2 focus-within:ring-black">
               <Lock size={16} className="text-gray-400 mr-2" />
               <input
                 type="password"
                 placeholder="••••••••"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="bg-transparent text-sm w-full outline-none"
+                className="bg-transparent text-sm w-full outline-none font-medium"
                 required
               />
             </div>
@@ -132,9 +123,9 @@ export default function AuthModal({ isOpen, onClose }: { isOpen: boolean; onClos
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-black hover:bg-neutral-800 text-white font-medium py-2.5 rounded-xl transition text-sm disabled:opacity-50 mt-4 cursor-pointer"
+            className="w-full bg-black hover:bg-neutral-800 text-white font-medium py-2.5 rounded-xl transition text-sm disabled:opacity-50 mt-2 cursor-pointer"
           >
-            {loading ? 'Please wait...' : isSignUp ? 'Create Permanent Inbox' : 'Sign In'}
+            {loading ? 'Please wait...' : isSignUp ? 'Create Mailbox Instantly' : 'Access Mailbox'}
           </button>
         </form>
 
@@ -143,7 +134,7 @@ export default function AuthModal({ isOpen, onClose }: { isOpen: boolean; onClos
             onClick={() => setIsSignUp(!isSignUp)}
             className="text-xs text-gray-600 hover:text-black font-medium cursor-pointer"
           >
-            {isSignUp ? 'Already have an account? Sign In' : "Don't have a permanent address? Sign Up"}
+            {isSignUp ? 'Already have an inbox? Sign In' : 'Need a new permanent inbox? Create One'}
           </button>
         </div>
       </div>

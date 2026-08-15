@@ -10,15 +10,20 @@ import {
   Check, 
   RefreshCw, 
   Trash2, 
-  Clock, 
-  ChevronRight, 
-  ExternalLink,
   ShieldCheck,
-  User,
-  LogOut,
-  Plus,
-  Lock
+  User as UserIcon,
+  LogOut
 } from 'lucide-react';
+import type { User, AuthChangeEvent, Session } from '@supabase/supabase-js';
+
+interface UserInbox {
+  id: string;
+  user_id: string;
+  username: string;
+  address: string;
+  is_primary: boolean;
+  created_at: string;
+}
 
 export default function ZynkBoxApp() {
   const [emails, setEmails] = useState<EmailRecord[]>([]);
@@ -28,14 +33,14 @@ export default function ZynkBoxApp() {
   const [loading, setLoading] = useState(true);
   
   // Auth state
-  const [user, setUser] = useState<any>(null);
-  const [userInboxes, setUserInboxes] = useState<any[]>([]);
+  const [user, setUser] = useState<User | null>(null);
+  const [userInboxes, setUserInboxes] = useState<UserInbox[]>([]);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [newAlias, setNewAlias] = useState('');
   const [addingAlias, setAddingAlias] = useState(false);
 
   // Generate random temporary fallback address
-  const generateRandomAddress = () => {
+  const generateRandomAddress = (): string => {
     const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
     let result = '';
     for (let i = 0; i < 7; i++) {
@@ -51,7 +56,6 @@ export default function ZynkBoxApp() {
       setUser(user);
 
       if (user) {
-        // Fetch user's claimed permanent inboxes
         const { data: inboxes } = await supabase
           .from('user_inboxes')
           .select('*')
@@ -59,13 +63,12 @@ export default function ZynkBoxApp() {
           .order('created_at', { ascending: true });
 
         if (inboxes && inboxes.length > 0) {
-          setUserInboxes(inboxes);
+          setUserInboxes(inboxes as UserInbox[]);
           setCurrentEmail(inboxes[0].address);
           return;
         }
       }
 
-      // Fallback to saved local temporary address
       const saved = localStorage.getItem('zynkbox_temp_email');
       if (saved) {
         setCurrentEmail(saved);
@@ -78,7 +81,7 @@ export default function ZynkBoxApp() {
 
     initAuth();
 
-    const { data: authListener } = supabase.auth.onAuthStateChange((_, session) => {
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
       setUser(session?.user || null);
     });
 
@@ -98,10 +101,11 @@ export default function ZynkBoxApp() {
       .order('received_at', { ascending: false });
 
     if (!error && data) {
-      setEmails(data as EmailRecord[]);
+      const records = data as EmailRecord[];
+      setEmails(records);
       if (selectedEmail) {
-        const updated = data.find((e) => e.id === selectedEmail.id);
-        if (updated) setSelectedEmail(updated as EmailRecord);
+        const updated = records.find((e: EmailRecord) => e.id === selectedEmail.id);
+        if (updated) setSelectedEmail(updated);
       }
     }
     setLoading(false);
@@ -111,7 +115,6 @@ export default function ZynkBoxApp() {
     if (!currentEmail) return;
     fetchEmails(currentEmail);
 
-    // Supabase Realtime Subscription
     const channel = supabase
       .channel(`inbox:${currentEmail}`)
       .on(
@@ -122,8 +125,8 @@ export default function ZynkBoxApp() {
           table: 'emails',
           filter: `inbox_address=eq.${currentEmail}`,
         },
-        (payload) => {
-          setEmails((prev) => [payload.new as EmailRecord, ...prev]);
+        (payload: { new: Record<string, unknown> }) => {
+          setEmails((prev) => [payload.new as unknown as EmailRecord, ...prev]);
         }
       )
       .subscribe();
@@ -133,7 +136,7 @@ export default function ZynkBoxApp() {
     };
   }, [currentEmail]);
 
-  // Create new permanent alias (logged in only)
+  // Create new permanent alias
   const handleAddAlias = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newAlias.trim() || !user) return;
@@ -152,7 +155,7 @@ export default function ZynkBoxApp() {
       .single();
 
     if (!error && data) {
-      setUserInboxes([...userInboxes, data]);
+      setUserInboxes([...userInboxes, data as UserInbox]);
       setCurrentEmail(data.address);
       setNewAlias('');
       setAddingAlias(false);
@@ -243,11 +246,10 @@ export default function ZynkBoxApp() {
             <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
           </button>
 
-          {/* User Auth Profile Button */}
           {user ? (
             <button
               onClick={handleSignOut}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg text-red-600 hover:bg-red-50 transition border border-red-100"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg text-red-600 hover:bg-red-50 transition border border-red-100 cursor-pointer"
               title="Sign Out"
             >
               <LogOut size={14} />
@@ -256,16 +258,16 @@ export default function ZynkBoxApp() {
           ) : (
             <button
               onClick={() => setIsAuthModalOpen(true)}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition shadow-sm"
+              className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition shadow-sm cursor-pointer"
             >
-              <User size={14} />
+              <UserIcon size={14} />
               <span>Sign In / Claim Permanent</span>
             </button>
           )}
         </div>
       </header>
 
-      {/* Main Mail App Body */}
+      {/* Main Body */}
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar */}
         <aside className="w-64 bg-white border-r border-[#e5e7eb] flex flex-col p-4 shrink-0 hidden md:flex">
@@ -305,7 +307,7 @@ export default function ZynkBoxApp() {
                 </p>
                 <button
                   onClick={() => setIsAuthModalOpen(true)}
-                  className="w-full py-1.5 bg-black text-white text-xs rounded-lg font-medium hover:bg-neutral-800 transition"
+                  className="w-full py-1.5 bg-black text-white text-xs rounded-lg font-medium hover:bg-neutral-800 transition cursor-pointer"
                 >
                   Create Permanent Inbox
                 </button>
@@ -367,7 +369,6 @@ export default function ZynkBoxApp() {
         <div className={`flex-1 bg-white flex flex-col ${!selectedEmail ? 'hidden md:flex' : 'flex'}`}>
           {selectedEmail ? (
             <div className="flex flex-col h-full overflow-hidden">
-              {/* Message Header */}
               <div className="p-6 border-b border-[#e5e7eb] flex items-start justify-between">
                 <div>
                   <button
@@ -390,14 +391,13 @@ export default function ZynkBoxApp() {
 
                 <button
                   onClick={(e) => deleteEmail(selectedEmail.id, e)}
-                  className="p-2 text-gray-400 hover:text-red-600 rounded-lg hover:bg-gray-100 transition"
+                  className="p-2 text-gray-400 hover:text-red-600 rounded-lg hover:bg-gray-100 transition cursor-pointer"
                   title="Delete message"
                 >
                   <Trash2 size={18} />
                 </button>
               </div>
 
-              {/* Highlighted OTP Banner */}
               {selectedEmail.otp_code && (
                 <div className="mx-6 mt-6 p-4 rounded-xl bg-green-50 border border-green-200 flex items-center justify-between">
                   <div>
@@ -413,14 +413,13 @@ export default function ZynkBoxApp() {
                       navigator.clipboard.writeText(selectedEmail.otp_code || '');
                       alert('OTP Copied to Clipboard!');
                     }}
-                    className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-xs font-bold rounded-lg transition"
+                    className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-xs font-bold rounded-lg transition cursor-pointer"
                   >
                     Copy OTP
                   </button>
                 </div>
               )}
 
-              {/* Message Body Content */}
               <div className="p-6 flex-1 overflow-y-auto text-sm text-gray-800 leading-relaxed font-normal">
                 {selectedEmail.body_html ? (
                   <div 
@@ -471,13 +470,13 @@ export default function ZynkBoxApp() {
                 <button
                   type="button"
                   onClick={() => setAddingAlias(false)}
-                  className="px-3 py-2 text-xs font-medium text-gray-600 hover:bg-gray-100 rounded-lg"
+                  className="px-3 py-2 text-xs font-medium text-gray-600 hover:bg-gray-100 rounded-lg cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-black text-white text-xs font-semibold rounded-lg hover:bg-neutral-800"
+                  className="px-4 py-2 bg-black text-white text-xs font-semibold rounded-lg hover:bg-neutral-800 cursor-pointer"
                 >
                   Create Address
                 </button>
